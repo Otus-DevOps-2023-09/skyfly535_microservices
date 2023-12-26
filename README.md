@@ -1,5 +1,107 @@
 # skyfly535_microservices
 skyfly535 microservices repository
+# HW14 Docker: сети, docker-compose.
+
+## В процессе выполнения ДЗ выполнены следующие мероприятия:
+
+1. Изучена работа контейнера с различными сетевыми драйверами `none`, `host`;
+
+```
+docker run -ti --rm --network none joffotron/docker-net-tools -c ifconfig
+
+docker run -ti --rm --network host joffotron/docker-net-tools -c ifconfig
+
+docker run --network host -d nginx (запускаем несколько раз)
+```
+Вывод `docker logs <CONTAINER ID nginx>` говорит о том, что все контейнеры nginx кроме первого остановленны, т.к. сеть хоста одна, а порт занят первым запущенным контейнером.
+
+```
+nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
+```
+
+2. Изучена работа с етевыми алиасами при запуске темтового проекта `Microservices Reddit` с использованием `bridge-сети`;
+
+```
+docker network create reddit --driver bridge
+
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:4
+docker run -d --network=reddit --network-alias=post skyfly534/post:1.0
+docker run -d --network=reddit --network-alias=comment skyfly534/comment:2.0
+docker run -d --network=reddit -p 9292:9292 skyfly534/ui:3.0
+```
+
+3. Запущен проект в 2-х bridge сетях `back_net` и `front_net`, чтобы сервис `ui` не имел доступа к `базе данных`;
+
+```
+docker network create back_net --subnet=10.0.2.0/24
+docker network create front_net --subnet=10.0.1.0/24
+
+docker run -d --network=front_net -p 9292:9292 --name ui  skyfly534/ui:3.0
+docker run -d --network=back_net --name comment  skyfly534/comment:2.0
+docker run -d --network=back_net --name post  skyfly534/post:1.0
+docker run -d --network=back_net --name mongo_db --network-alias=post_db --network-alias=comment_db mongo:4
+
+docker network connect front_net post
+docker network connect front_net comment
+```
+
+4. Изучен сетевой и правила `iptables` стек после запуска проекта;
+
+```
+docker-machine ssh docker-host
+sudo apt-get update && sudo apt-get install bridge-utils
+
+docker network ls
+
+ifconfig | grep br
+
+brctl show <interface>
+```
+
+```
+sudo iptables -nL -t nat
+```
+
+## Docker-compose.
+
+5. Файл `docker-compose.yml` (указанный в методичке) переработан для работы с 2-мя сетями и сетевыми аллиасами. Произведена параметризация с помощью переменных окружения (файле `.env`);
+
+```
+# Переменные для Docker-compose.yml
+COMPOSE_PROJECT_NAME=reddit
+USERNAMEDEVOPS=skyfly534
+VER_DB=3.2
+DB_PATH=/data/db
+VER_UI=3.0
+UI_PORT=80
+VER_POST=1.0
+VER_COMMENT=2.0
+```
+
+Базовое имя образа формируется из названия папки и названия контейнера. Его можно изменить при помощи переменной окружения `COMPOSE_PROJECT_NAME`, либо указать в параметре ключа `-p` при запуске docker compose.
+
+## Дополнительное задание
+
+6. При помощи файла `docker-compose.override.yml` переопределена базовая конфигурация с целью переопределения инструкции command контейнеров `comment` и `ui` и для создания `volumes` (каталогов) и осуществления импорта кодом приложения внутрь контейнеров.
+
+```
+version: '3.3'
+services:
+
+  ui:
+    command: puma --debug -w 2
+    volumes:
+      - ./ui:/app
+
+  post:
+    volumes:
+      - ./post-py:/app
+
+  comment:
+    command: puma --debug -w 2
+    volumes:
+      - ./comment:/app
+```
 # HW13 Docker-образы. Микросервисы.
 
 ## В процессе выполнения ДЗ выполнены следующие мероприятия:
@@ -49,7 +151,7 @@ RUN set -x \
 ```
 5. Создана bridge-сеть для контейнеров с именем `reddit`;
 
-6. Запусщены контейнеры c `сетевыми алиасами`  из подготовленных образов;
+6. Запущены контейнеры c `сетевыми алиасами`  из подготовленных образов;
 
 ```
 docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:4
@@ -105,7 +207,7 @@ skyfly534/comment   1.0       1beacb74836b   4 hours ago     996MB
 skyfly534/post      1.0       8120ff85bbb3   4 hours ago     67.2MB
 mongo               4         a04ee971f462   4 days ago      434MB
 ```
-10. Создан Docker volume reddit_db и подключен в контейнер с MongoDB по пути /data/db;
+10. Создан Docker volume reddit_db и подключен в контейнер с MongoDB по пути /data/db.
 
 ```
 docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db -v reddit_db:/data/db mongo:4
