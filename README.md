@@ -1,13 +1,140 @@
 # skyfly535_microservices
 skyfly535 microservices repository
+# HW13 Docker-образы. Микросервисы.
 
+## В процессе выполнения ДЗ выполнены следующие мероприятия:
+
+1. Для выполнения домашнего задания и дальнейшей работы с Docker-
+образами установлен и протестирован `linter`;
+
+```
+$ /bin/hadolint Dockerfile
+Dockerfile:6 DL3013 warning: Pin versions in pip. Instead of `pip install <package>` use `pip install <package>==<version>` or `pip install --requirement <requirements file>`
+Dockerfile:6 DL3018 warning: Pin versions in apk add. Instead of `apk add <package>` use `apk add <package>=<version>`
+Dockerfile:6 DL3042 warning: Avoid use of cache directory with pip. Use `pip install --no-cache-dir <package>`
+```
+2. Cоздана необходимая структура для развертывания приложения;
+
+Пприложение состоит из трех компонентов:
+
+`post-py` - сервис отвечающий за написание постов
+
+`comment` - сервис отвечающий за написание комментариев
+
+`ui` - веб-интерфейс, работающий с другими сервисами
+
+также требуется база данных `MongoDB`
+
+3. Для каждого сервиса создан `Dockerfile` для дальнейшего создания образа контейнеров;
+
+4. Собраны образы с сервисами `post:1.0`, `comment:1.0`, `ui:1.0`;
+
+```
+docker pull mongo:4
+docker build -t skyfly534/post:1.0 ./post-py
+docker build -t skyfly534/comment:1.0 ./comment
+docker build -t skyfly534/ui:1.0 ./ui
+docker network create reddit
+```
+
+В процессе сборки для замены неотвечающего репозитория задействован архивный репозиторий deb http://archive.debian.org/debian stretch main:
+
+```
+FROM ruby:2.2
+RUN set -x \
+ && echo "deb http://archive.debian.org/debian stretch main" > /etc/apt/sources.list \
+ && apt-get update -qq \
+ && apt-get install -y build-essential \
+ && apt-get clean
+```
+5. Создана bridge-сеть для контейнеров с именем `reddit`;
+
+6. Запусщены контейнеры c `сетевыми алиасами`  из подготовленных образов;
+
+```
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:4
+docker run -d --network=reddit --network-alias=post skyfly534/post:1.0
+docker run -d --network=reddit --network-alias=comment skyfly534/comment:1.0
+docker run -d --network=reddit -p 9292:9292 skyfly534/ui:1.0
+```
+При использлвании самой свежей `mongo` приложение возвратило ошибку (Can't show blog posts, some problems with the post service), вызвана она тем, что используется слишком старый драйвер БД. Запускаем БД версии ниже 6.
+
+Проверели прриложение, зашли на `http://<docker-host-ip>:9292/`
+
+## Дополнительное задание
+
+7. Запущены контейнеры с другими сетевыми алиасами;
+
+Переменные окружения при этом заданы через параметр `-e`
+
+```
+docker run -d --network=reddit --network-alias=skyfly_post_db --network-alias=skyfly_comment_db mongo:4
+ docker run -d --network=reddit --network-alias=skyfly_post -e POST_DATABASE_HOST=skyfly_post_db skyfly534/post:1.0
+ docker run -d --network=reddit --network-alias=skyfly_comment -e COMMENT_DATABASE_HOST=skyfly_comment_db skyfly534/comment:1.0
+ docker run -d --network=reddit -p 9292:9292 -e POST_SERVICE_HOST=skyfly_post -e COMMENT_SERVICE_HOST=skyfly_comment skyfly534/ui:1.0
+
+```
+
+8. Создан новый Dockerfile для сервиса ui, новый образ `skyfly534/ui:2.0` собран на базе `ubuntu:16.04`;
+
+Произведена сверка размеров образов:
+
+```
+docker images
+REPOSITORY          TAG       IMAGE ID       CREATED              SIZE
+skyfly534/ui        1.0       b94659d48b1b   About a minute ago   999MB
+skyfly534/ui        2.0       64cc255f75da   7 minutes ago        485MB
+skyfly534/comment   1.0       1beacb74836b   11 minutes ago       996MB
+skyfly534/post      1.0       8120ff85bbb3   13 minutes ago       67.2MB
+mongo               4         a04ee971f462   4 days ago           434MB
+```
+
+## Дополнительное задание
+
+9. Созданы новые Dockerfile для сервисов ui и comment, новые образы `skyfly534/ui:3.0` и `skyfly534/comment:2.0` собранs на базе `alpine:3.14`;
+
+Произведена сверка размеров образов:
+
+```
+docker images
+REPOSITORY          TAG       IMAGE ID       CREATED         SIZE
+skyfly534/ui        3.0       8c509ac24622   9 minutes ago   93.6MB
+skyfly534/ui        1.0       b94659d48b1b   4 hours ago     999MB
+skyfly534/ui        2.0       64cc255f75da   4 hours ago     485MB
+skyfly534/comment   1.0       1beacb74836b   4 hours ago     996MB
+skyfly534/post      1.0       8120ff85bbb3   4 hours ago     67.2MB
+mongo               4         a04ee971f462   4 days ago      434MB
+```
+10. Создан Docker volume reddit_db и подключен в контейнер с MongoDB по пути /data/db;
+
+```
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db -v reddit_db:/data/db mongo:4
+```
+Произведена проверка путем проверки наличия написанного поста в приложении после пересоздания контейнеров.
+
+На память
+
+```
+docker pull mongo:4
+
+docker build -t skyfly534/post:1.0 ./post-py
+docker build -t skyfly534/comment:2.0 ./comment
+docker build -t skyfly534/ui:3.0 ./ui
+
+docker network create reddit
+
+docker run -d --network=reddit --network-alias=post_db --network-alias=comment_db mongo:4
+docker run -d --network=reddit --network-alias=post skyfly534/post:1.0
+docker run -d --network=reddit --network-alias=comment skyfly534/comment:2.0
+docker run -d --network=reddit -p 9292:9292 skyfly534/ui:3.0
+```
 # HW12 Технология контейнеризации. Введение в Docker.
 
 ## В процессе выполнения ДЗ выполнены следующие мероприятия:
 
 1. Установлен `Docker` по официальной документации. Проверена версия установленного ПО;
 
-2. Текущий пользователь добавлен к группе безоасности `docker` (для работы без `sudo`);
+2. Текущий пользователь добавлен к группе безопасности `docker` (для работы без `sudo`);
 
 ```
 sudo groupadd docker
@@ -17,7 +144,7 @@ sudo usermod -aG docker $USER
 newgrp docker
 ```
 
-3. Скачан и запущен темтовый контейнер;
+3. Скачан и запущен теcтовый контейнер;
 
 ```
 docker run hello-world
@@ -70,7 +197,7 @@ eval $(docker-machine env docker-host)
 ```
 docker build -t reddit:latest .
 ```
-10. После сборки образа на хосте YC c инициализированysv окружение `Docker` запущен котейнер;
+10. После сборки образа на хосте YC c инициализированysv окружение `Docker` запущен контейнер;
 
 ```
 docker run --name reddit -d --network=host reddit:latest
@@ -118,7 +245,7 @@ terraform init
 terraform apply
 ```
 
-15. Написан плейбук Ansible `deploy_docker_app.yml` с использованием динамического инвентори (рассмотренно ранеев ДЗ № 10) для установки докера и запуска (для запуска контейнера возьмём community.docker.docker_container) приложения.
+15. Написан плейбук Ansible `deploy_docker_app.yml` с использованием динамического инвентори (расмотренно ранее в ДЗ № 10) для установки докера и запуска (для запуска контейнера возьмём community.docker.docker_container) приложения.
 
 ```
 ansible-inventory --list
