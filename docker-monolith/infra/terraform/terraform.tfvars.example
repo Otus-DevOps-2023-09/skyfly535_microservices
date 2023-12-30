@@ -1,0 +1,8 @@
+cloud_id                 = "example cloud_id"
+folder_id                = "example folder_id"
+image_id                 = "example image_id"
+subnet_id                = "example subnet_id"
+docker_disk_image        = "<docker_disk_image>"
+public_key_path          = "/path/to/public/key"
+private_key_path         = "/path/to/private/key"
+service_account_key_file = "/path/to/key/json"

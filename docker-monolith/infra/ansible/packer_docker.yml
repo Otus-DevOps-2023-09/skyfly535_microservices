@@ -1,0 +1,28 @@
+---
+- name: Install Docker
+  hosts: all
+  become: true
+  tasks:
+  - name: Add Docker GPG apt Key
+    apt_key:
+      url: https://download.docker.com/linux/ubuntu/gpg
+      state: present
+  - name: Add Docker Repository
+    apt_repository:
+      repo: deb [ arch=amd64 ] https://download.docker.com/linux/ubuntu bionic stable
+      state: present
+  - name: Update apt and install packages
+    apt:
+      pkg:
+        - python3-minimal
+        - python3-pip
+        - docker-ce
+        - docker-ce-cli
+        - containerd.io
+        - docker-buildx-plugin
+        - docker-compose-plugin
+      state: latest
+      update_cache: true
+  - name: Install Docker Module for Python
+    pip:
+      name: docker
