@@ -1,0 +1,6 @@
+service_account_key_file = "/path/to/key/json"
+folder_id                = "example folder_id"
+source_image_family      = "ubuntu-2204-lts"
+image_family             = "ubuntu-docker"
+username                 = "ubuntu"
+disk_size_gb             = "10"

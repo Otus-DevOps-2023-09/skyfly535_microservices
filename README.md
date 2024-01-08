@@ -1,5 +1,309 @@
 # skyfly535_microservices
 skyfly535 microservices repository
+
+# HW15 Устройство Gitlab CI. Построение процесса непрерывной поставки.
+
+## В процессе выполнения ДЗ выполнены следующие мероприятия:
+
+1. Подготовлен образ ВМ при помощи `packer` с минимальными для `Gitlab CI` требованиями;
+
+ - 2 core СPU
+ - 4 GB RAM
+ - 50 GB HDD
+
+Изначально созданный файл конфига образа `docker.json`, был преобразован средствами packer в формат `HCL`
+
+```
+packer hcl2_upgrade -with-annotations ./packer/docker.json
+```
+В результате был сформирован файл конфига `./gitlab-ci/packer/docker.json.pkr.hcl` и сформирован файл с переменными `./gitlab-ci/packer/yandex.pkrvars.hcl`.
+
+Проверка шаблона и запуск сборки образа
+
+```
+packer validate -var-file=yandex.pkrvars.hcl docker.json.pkr.hcl
+
+packer build -var-file=yandex.pkrvars.hcl docker.json.pkr.hcl
+```
+
+2. Запущена ВМ из образа `packer` при помощи `terraform`;
+
+В кталоге `./gitlab-ci/terraform/` выполняем следующие команды:
+
+```
+terraform validate
+
+terraform apply
+```
+
+3. При помощи ansible playbook `./gitlab-ci/ansible/gitlab_ci_in_docker.yml` развернут `Gitlab` в контейнере;
+
+Используем плагин inventory для YC из предыдущих ДЗ.
+
+Для работы с контейнерами используем модуль  `docker_container_module`.
+
+```
+$ ansible-playbook gitlab_ci_in_docker.yml
+
+PLAY [Gitlab CI deployment in Docker] ****************************************************************************
+
+TASK [Gathering Facts] *******************************************************************************************
+ok: [51.250.85.59]
+
+TASK [create dirs for data volumes] ******************************************************************************
+changed: [51.250.85.59] => (item=/srv/gitlab/config)
+changed: [51.250.85.59] => (item=/srv/gitlab/logs)
+changed: [51.250.85.59] => (item=/srv/gitlab/data)
+
+TASK [install PIP] ***********************************************************************************************
+changed: [51.250.85.59]
+
+TASK [install Docker] ********************************************************************************************
+changed: [51.250.85.59]
+
+TASK [Gitlab CI deployment in Docker] ****************************************************************************
+changed: [51.250.85.59]
+
+PLAY RECAP *******************************************************************************************************
+51.250.85.59               : ok=5    changed=4    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0
+```
+После запуска открываем браузер и идем на `http://51.250.85.59` (внешний IP ВМ).
+
+Login для первого входа `root`. Что узнать пароль заходим на ВМ и выполняем следующую команду:
+
+```
+sudo docker exec -it gitlab grep 'Password:' /etc/gitlab/initial_root_password
+```
+где `gitlab` имя контейнера.
+
+4. Через веб-интерфейс создана группа `homework`, в ней проект `example`. Склонирован репозиторий на локальную машину;
+
+```
+git clone http://51.250.85.59/homework/example.git
+```
+так же понадобятся аутентификационные данные описанные выше.
+
+5. В корне репозитория создана начальная версия тестового пайплайна `./.gitlab-ci.yml` и запушина в репозиторий;
+
+```
+git add .gitlab-ci.yml
+
+git commit -m "Add pipeline definition"
+
+git push
+```
+В `CI/CD -> Pipelines` видим, что запушеный пайплайн застрял в состоянии `pending`. Необходимо установить раннеры, которые могут выполнять работу.
+
+6. Установлен, запущен и зарегистрирован раннер (в контейнере);
+
+```
+sudo mkdir -p /srv/gitlab-runnner/config
+
+docker run -d --name gitlab-runner --restart always -v /srv/gitlab-
+runner/config:/etc/gitlab-runner -v /var/run/docker.sock:/var/run/docker.sock
+gitlab/gitlab-runner:latest
+
+docker exec -it gitlab-runner gitlab-runner register \
+--url http://51.250.85.59/ \
+--non-interactive \
+--locked=false \
+--name DockerRunner \
+--executor docker \
+--docker-image alpine:latest \
+--registration-token GR13489417h3XsW7nxUeqx1U3MLnR \
+--tag-list "linux,xenial,ubuntu,docker" \
+--run-untagged
+```
+Пайплайн вышел из застрявшего состояния, отработал без ошибок.
+
+7. Добавлено приложение `reddit` в проект;
+
+```
+git clone https://github.com/express42/reddit.git
+
+Не забываем удалить каталог .git у склонированного иначе не запуши
+rm -rf ./reddit/.git
+
+git add reddit/
+
+git commit -m "Add reddit app"
+
+git push
+```
+8. Добавлен запуск тестов приложения `reddit` в пайплайн;
+
+```
+image: ruby:2.4.2
+stages:
+...
+
+variables:
+  DATABASE_URL: 'mongodb://mongo/user_posts'
+before_script:
+  - cd reddit
+  - bundle install
+...
+
+test_unit_job:
+  stage: test
+  services:
+    - mongo:latest
+  script:
+    - ruby simpletest.rb
+...
+```
+
+Создан файл с тестом `reddit/simpletest.rb`
+
+```
+require_relative './app'
+require 'test/unit'
+require 'rack/test'
+
+set :environment, :test
+
+class MyAppTest < Test::Unit::TestCase
+  include Rack::Test::Methods
+
+  def app
+    Sinatra::Application
+  end
+
+  def test_get_request
+    get '/'
+    assert last_response.ok?
+  end
+end
+```
+
+В `reddit/Gemfile` добавлена библиотека `rack-test` для тестирования
+
+```
+...
+gem 'sinatra', '~> 2.0.1'
+gem 'haml'
+gem 'bson_ext'
+gem 'bcrypt'
+gem 'puma'
+gem 'mongo'
+gem 'json'
+gem 'rack-test' <---
+...
+```
+9. Добавлены окружения `dev`, `beta (stage)` и `production`;
+
+```
+stages:
+- build
+- test
+- review <---
+...
+
+build_job:
+...
+test_unit_job:
+...
+
+test_integration_job:
+...
+
+deploy_dev_job:
+  stage: review
+  script:
+    - echo 'Deploy'
+  environment:
+    name: dev
+    url: http://dev.example.com
+```
+
+```
+- build
+   - test
+   - review
+   - stage      <---
+   - production <---
+...
+
+staging: # stage окружение
+  stage: stage
+  when: manual
+  script:
+    - echo 'Deploy'
+  environment:
+    name: beta
+    url: http://beta.example.com
+
+production: # production окружение
+  stage: production
+  when: manual
+  script:
+    - echo 'Deploy'
+  environment:
+    name: production
+    url: http://example.com
+```
+
+10. Дбавлено условие, при котором на `stage` и `production` пойдут только те ветки, которые отмечены `тегом`;
+
+```
+staging: # stage окружение
+  stage: stage
+  when: manual
+  only: # условие, при котором на stage пойдут только те ветки, которые отмечены тегом
+    - tags
+  script:
+    - echo 'Deploy'
+  environment:
+    name: beta
+    url: http://beta.example.com
+
+production: # production окружение
+  stage: production
+  when: manual
+  only: # условие, при котором на production пойдут только те ветки, которые отмечены тегом
+    - tags
+  script:
+    - echo 'Deploy'
+  environment:
+    name: production
+    url: http://example.com
+```
+11. Cоздано динамические окружение для всех веток, исключая главную ветку `main`;
+
+```
+branch_review:
+  stage: review
+  script: echo "Deploy to $CI_ENVIRONMENT_SLUG"
+  environment:
+    name: branch/$CI_COMMIT_REF_NAME
+    url: http://$CI_ENVIRONMENT_SLUG.example.com
+  only:
+    - branches
+  except:
+    - main
+```
+## Дополнительное задание
+
+12. В этап пайплайна `build` добавлен запуск контейнера с приложением `reddit`. Контейнер с reddit деплоился на окружение, динамически создаваемое для каждой ветки в Gitlab;
+
+```
+reddit_run:
+  stage: build
+  environment:  # Выкачивает с dockerhub образ приложения skyfly534/otus-reddit:1.0 и запускает контейнер с reddit
+    name: branch/$CI_COMMIT_REF_NAME
+    url: http://$CI_ENVIRONMENT_SLUG.example.com
+  image: skyfly534/otus-reddit:1.0
+  before_script:
+    - echo 'Docker for run reddit'
+  script:
+    - echo 'Run reddit'
+```
+используем для выполнения задания подготовленный в предыдущем ДЗ образ приложения `skyfly534/otus-reddit:1.0` и загруженный на  `dockerhub`
+
+13. Автоматизированно развёртывание `GitLab Runner` при помощи Ansible плейбук `./gitlab-ci/ansible/gitlab_runner_in_docker.yml`.
+
+Регистрация пройдет только при запуске плейбука с тегом `registration`. Перед запуском плейбука необходимо внести `URL CI` сервера и регистрационный `токен` для runner. Переменные не вынесены в файл `.env` для наглядности.
+
 # HW14 Docker: сети, docker-compose.
 
 ## В процессе выполнения ДЗ выполнены следующие мероприятия:
@@ -19,7 +323,7 @@ docker run --network host -d nginx (запускаем несколько раз
 nginx: [emerg] bind() to [::]:80 failed (98: Address already in use)
 ```
 
-2. Изучена работа с етевыми алиасами при запуске темтового проекта `Microservices Reddit` с использованием `bridge-сети`;
+2. Изучена работа с сетевыми алиасами при запуске тестового проекта `Microservices Reddit` с использованием `bridge-сети`;
 
 ```
 docker network create reddit --driver bridge
@@ -64,7 +368,7 @@ sudo iptables -nL -t nat
 
 ## Docker-compose.
 
-5. Файл `docker-compose.yml` (указанный в методичке) переработан для работы с 2-мя сетями и сетевыми аллиасами. Произведена параметризация с помощью переменных окружения (файле `.env`);
+5. Файл `docker-compose.yml` (указанный в методичке) переработан для работы с 2-мя сетями и сетевыми алиасами. Произведена параметризация с помощью переменных окружения (файле `.env`);
 
 ```
 # Переменные для Docker-compose.yml
@@ -102,6 +406,7 @@ services:
     volumes:
       - ./comment:/app
 ```
+
 # HW13 Docker-образы. Микросервисы.
 
 ## В процессе выполнения ДЗ выполнены следующие мероприятия:

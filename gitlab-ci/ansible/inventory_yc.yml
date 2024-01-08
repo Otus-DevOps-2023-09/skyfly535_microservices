@@ -1,0 +1,13 @@
+---
+plugin: yc_compute
+folders:
+  - b1ghhcttrug793gc11tt
+filters:
+  - status == 'RUNNING'
+auth_kind: serviceaccountfile
+service_account_file: key.json
+compose:
+  ansible_host: network_interfaces[0].primary_v4_address.one_to_one_nat.address
+
+keyed_groups:
+  - key: labels['tags']
