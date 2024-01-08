@@ -1,0 +1,53 @@
+- name: Runner deployment in Docker
+  hosts: all
+  become: yes
+  vars:                                    # данные переменные можно вынести в файл .env
+    url: "http://51.250.85.59/"            # необходимо внести URL CI сервера
+    name: "DockerRunner"
+    docker_image: "alpine:latest"
+    token: "GR13489417h3XsW7nxUeqx1U3MLnR" # регистрационный токен для runner
+    tag_list: "linux,xenial,ubuntu,docker"
+  tasks:
+
+    - name: Create dirs for volumes
+      file:
+        name: "/srv/gitlab-runnner/config"
+        state: directory
+        owner: root
+        group: root
+
+    - name: Install PIP # можно пропустить так как в playbook для gitlab-ci была данная таска
+      apt:
+        name: python3-pip
+        state: present
+
+    - name: Install Docker # можно пропустить так как в playbook для gitlab-ci была данная таска
+      pip:
+        name: docker
+        state: present
+
+    - name: Run gitlab-runner
+      community.docker.docker_container:
+        name: gitlab-runner
+        hostname: gitlab-runner
+        image: gitlab/gitlab-runner:latest
+        state: started
+        restart_policy: unless-stopped
+        container_default_behavior: "no_defaults"
+        volumes:
+          - "/srv/gitlab-runnner/config:/etc/gitlab-runnner"
+          - "/var/run/docker.sock:/var/run/docker.sock"
+
+    - name: Register runner
+      community.docker.docker_container_exec:
+        container: gitlab-runner
+        command: gitlab-runner register --url {{ url }} --non-interactive --locked=false --name={{ name }} --executor docker --docker-image {{ docker_image }} --registration-token {{ token }} --tag-list={{ tag_list }} --run-untagged
+      register: result
+      tags:
+      - registration
+
+    - name: Print result
+      debug:
+        var: result.stderr_lines
+      tags:
+      - registration
