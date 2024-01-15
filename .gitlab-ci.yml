@@ -1,0 +1,84 @@
+default:
+  image: ruby:2.4.2
+  before_script:
+    - cd reddit
+    - bundle install
+
+stages:
+  - build
+  - test
+  - review
+  - stage
+  - production
+
+variables:
+  DATABASE_URL: 'mongo'
+
+build_job:
+  stage: build
+  script:
+    - echo 'Building'
+
+reddit_run:
+  stage: build
+  environment:  # Выкачивает с dockerhub образ приложения skyfly534/otus-reddit:1.0 и запускает контейнер с reddit
+    name: branch/$CI_COMMIT_REF_NAME
+    url: http://$CI_ENVIRONMENT_SLUG.example.com
+  image: skyfly534/otus-reddit:1.0
+  before_script:
+    - echo 'Docker for run reddit'
+  script:
+    - echo 'Run reddit'
+
+test_unit_job:
+  stage: test
+  services:
+    - mongo:latest
+  script:
+    - ruby simpletest.rb
+
+test_integration_job:
+  stage: test
+  script:
+    - echo 'Testing 2'
+
+deploy_dev_job:
+  stage: review  # review окружение
+  script:
+    - echo 'Deploy'
+  environment:
+    name: dev
+    url: http://dev.example.com
+
+branch_review: # Добавление динамического окружения для каждой ветки в репозитории, кроме ветки master
+  stage: review
+  script: echo "Deploy to $CI_ENVIRONMENT_SLUG"
+  environment:
+    name: branch/$CI_COMMIT_REF_NAME
+    url: http://$CI_ENVIRONMENT_SLUG.example.com
+  only:
+    - branches
+  except:
+    - main
+
+staging: # stage окружение
+  stage: stage
+  when: manual
+  only:  # условие, при котором на stage пойдут только те ветки, которые отмечены тегом
+    - tags
+  script:
+    - echo 'Deploy'
+  environment:
+    name: beta
+    url: http://beta.example.com
+
+production: # production окружение
+  stage: production
+  when: manual
+  only:     # условие, при котором на production пойдут только те ветки, которые отмечены тегом
+    - tags
+  script:
+    - echo 'Deploy'
+  environment:
+    name: production
+    url: http://example.com
