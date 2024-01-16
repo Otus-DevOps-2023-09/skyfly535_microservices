@@ -5,7 +5,7 @@ skyfly535 microservices repository
 
 ## В процессе выполнения ДЗ выполнены следующие мероприятия:
 
-1. Создан Docker хост в Yandex Cloud
+1. Создан Docker хост в Yandex Cloud;
 
 ```
 yc compute instance create \
@@ -29,21 +29,20 @@ docker-machine create \
 eval $(docker-machine env docker-host)
 ```
 
-2. Запущен контейнер с системой мониторинга `Prometheus` из готовым образом с
-`DockerHub`;
+2. Запущен контейнер с системой мониторинга `Prometheus` из готовым образом с `DockerHub`;
 
 ```
 $ docker run --rm -p 9090:9090 -d --name prometheus prom/prometheus
 ```
 
-4. Изучены web интерфейс системы мониторинга, метрики по умолчанию;
+3. Изучены web интерфейс системы мониторинга, метрики по умолчанию;
 
 
-5. Изучен раздел `Targets` (цели) и формат собираемых метрик, доступных по адресу `host:port/metrics`;
+4. Изучен раздел `Targets` (цели) и формат собираемых метрик, доступных по адресу `host:port/metrics`;
 
-6. Создан `Dockerfile` ( ./monitoring/prometheus/Dockerfile) при помощи которого копируем файл конфигурации `prometheus.yml` с "нашей" машины внутрь контейнера;
+5. Создан `Dockerfile` ( ./monitoring/prometheus/Dockerfile) при помощи которого копируем файл конфигурации `prometheus.yml` с "нашей" машины внутрь контейнера;
 
-7. Созданы образы микросервисов `ui`, `post-py` и `comment` помощи скриптов `docker_build.sh`, которые есть в директории каждого сервиса соответственно для добавления информации из Git в наш `healthcheck`;
+6. Созданы образы микросервисов `ui`, `post-py` и `comment` при помощи скриптов `docker_build.sh`, которые есть в директории каждого сервиса соответственно для добавления информации из Git в наш `healthcheck`;
 
 ```
 /src/ui $ bash docker_build.sh
@@ -55,9 +54,9 @@ $ docker run --rm -p 9090:9090 -d --name prometheus prom/prometheus
 ```
 for i in ui post-py comment; do cd src/$i; bash docker_build.sh; cd -; done
 ```
-8. Создан файл `docker/docker-compose.yml` для совместного развертывания микросервисов `ui`, `post-py`, `comment` и системы мониторинга `Prometheus`;
+7. Создан файл `docker/docker-compose.yml` для совместного развертывания микросервисов `ui`, `post-py`, `comment` и системы мониторинга `Prometheus`;
 
-9. Добавлен сервис `prom/node-exporter:v0.15.2` в `docker/docker-compose.yml` для сбора информации о работе Docker хоста (нашей ВМ) и представления этой информации в Prometheus;
+8. Добавлен сервис `prom/node-exporter:v0.15.2` в `docker/docker-compose.yml` для сбора информации о работе Docker хоста (нашей ВМ) и представления этой информации в Prometheus;
 
 ![Alt text](Prom1.jpg)
 
@@ -68,7 +67,7 @@ https://hub.docker.com/repositories/skyfly534
 ```
 ## Дополнительные задания
 
-10. Добавлен сервис `percona/mongodb_exporter:0.40` в `docker/docker-compose.yml` для сбора информации о работе СУБД `MongoDB` и представления этой информации в Prometheus;
+9. Добавлен сервис `percona/mongodb_exporter:0.40` в `docker/docker-compose.yml` для сбора информации о работе СУБД `MongoDB` и представления этой информации в Prometheus;
 
 docker-compose.yml:
 
@@ -100,7 +99,7 @@ prometheus.yml:
 
 ...
 ```
-11. Добавлен мониторинг сервисов `comment`, `post`, `ui` в Prometheus с помощью `Blackbox exporter`;
+10. Добавлен мониторинг сервисов `comment`, `post`, `ui` в Prometheus с помощью `Blackbox exporter`;
 
 monitoring/blackbox/Dockerfile:
 
@@ -163,7 +162,7 @@ monitoring/prometheus/prometheus.yml:
 
 ![Alt text](Prom2.jpg)
 
-12. Написаны `Makefile` в каждом из каталогов `./src/ui/Makefilecd`, `./src/post-py/Makefilecd`, `./src/comment/Makefilecd` и `./src/Makefilecd` , которые "билдят" либо "пушат" каждые образ по отдельности, либо все сразу.
+11. Написаны `Makefile` в каждом из каталогов `./src/ui/Makefilecd`, `./src/post-py/Makefilecd`, `./src/comment/Makefilecd` и `./src/Makefilecd` , которые "билдят" либо "пушат" каждые образ по отдельности, либо все сразу.
 
 Для сборки отдельного образа выполняем `make` в соответствующем каталоге. Для "пуша" в `DockerHub` выполняем `make push`. Эти же команды в родительском каталоге будут действовать на все три сервиса.
 
