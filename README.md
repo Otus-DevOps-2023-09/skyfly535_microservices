@@ -1,6 +1,171 @@
 # skyfly535_microservices
 skyfly535 microservices repository
 
+# HW16 Введение в мониторинг. Системы мониторинга.
+
+## В процессе выполнения ДЗ выполнены следующие мероприятия:
+
+1. Создан Docker хост в Yandex Cloud;
+
+```
+yc compute instance create \
+  --name docker-host \
+  --zone ru-central1-c \
+  --network-interface subnet-name=default-ru-central1-c,nat-ip-version=ipv4 \
+  --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=15 \
+  --ssh-key ~/.ssh/id_rsa.pub
+```
+
+и инициализировано окружение Docker;
+
+```
+docker-machine create \
+  --driver generic \
+  --generic-ip-address=51.250.32.67 \
+  --generic-ssh-user yc-user \
+  --generic-ssh-key ~/.ssh/id_rsa  \
+  docker-host
+
+eval $(docker-machine env docker-host)
+```
+
+2. Запущен контейнер с системой мониторинга `Prometheus` из готовым образом с `DockerHub`;
+
+```
+$ docker run --rm -p 9090:9090 -d --name prometheus prom/prometheus
+```
+
+3. Изучены web интерфейс системы мониторинга, метрики по умолчанию;
+
+
+4. Изучен раздел `Targets` (цели) и формат собираемых метрик, доступных по адресу `host:port/metrics`;
+
+5. Создан `Dockerfile` ( ./monitoring/prometheus/Dockerfile) при помощи которого копируем файл конфигурации `prometheus.yml` с "нашей" машины внутрь контейнера;
+
+6. Созданы образы микросервисов `ui`, `post-py` и `comment` при помощи скриптов `docker_build.sh`, которые есть в директории каждого сервиса соответственно для добавления информации из Git в наш `healthcheck`;
+
+```
+/src/ui $ bash docker_build.sh
+/src/post-py $ bash docker_build.sh
+/src/comment $ bash docker_build.sh
+```
+или сразу все из корня репозитория
+
+```
+for i in ui post-py comment; do cd src/$i; bash docker_build.sh; cd -; done
+```
+7. Создан файл `docker/docker-compose.yml` для совместного развертывания микросервисов `ui`, `post-py`, `comment` и системы мониторинга `Prometheus`;
+
+8. Добавлен сервис `prom/node-exporter:v0.15.2` в `docker/docker-compose.yml` для сбора информации о работе Docker хоста (нашей ВМ) и представления этой информации в Prometheus;
+
+![Alt text](Prom1.jpg)
+
+### Ссылка на докер хаб с собранными образами
+
+```
+https://hub.docker.com/repositories/skyfly534
+```
+## Дополнительные задания
+
+9. Добавлен сервис `percona/mongodb_exporter:0.40` в `docker/docker-compose.yml` для сбора информации о работе СУБД `MongoDB` и представления этой информации в Prometheus;
+
+docker-compose.yml:
+
+```
+...
+
+mongo-exporter:
+    image: percona/mongodb_exporter:0.40
+    command:
+      - '--mongodb.uri=mongodb://post_db:27017'
+      - '--collect-all'
+      - '--log.level=debug'
+    ports:
+      - '9216:9216'
+    networks:
+      - back_net
+
+...
+```
+prometheus.yml:
+
+```
+...
+
+- job_name: 'mongodb'
+    static_configs:
+      - targets:
+        - 'mongo-exporter:9216'
+
+...
+```
+10. Добавлен мониторинг сервисов `comment`, `post`, `ui` в Prometheus с помощью `Blackbox exporter`;
+
+monitoring/blackbox/Dockerfile:
+
+```
+FROM prom/blackbox-exporter:latest
+ADD config.yml /etc/blackbox_exporter/
+```
+
+monitoring/blackbox/config.yml:
+
+```
+modules:
+  http_2xx:
+    prober: http
+    timeout: 5s
+    http:
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: []
+      method: GET
+      follow_redirects: false
+```
+docker-compose.yml:
+
+```
+...
+
+blackbox-exporter:
+    image: ${USERNAMEDEVOPS}/blackbox-exporter
+    networks:
+      - front_net
+    depends_on:
+      - ui
+      - post
+      - comment
+
+...
+```
+monitoring/prometheus/prometheus.yml:
+
+```
+- job_name: 'blackbox'
+    metrics_path: /metrics
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - http://ui:9292
+        - http://comment:9292
+        - http://post:9292
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+```
+### Итоговый список endpoint-ов Prometheus
+
+![Alt text](Prom2.jpg)
+
+11. Написаны `Makefile` в каждом из каталогов `./src/ui/Makefilecd`, `./src/post-py/Makefilecd`, `./src/comment/Makefilecd` и `./src/Makefilecd` , которые "билдят" либо "пушат" каждые образ по отдельности, либо все сразу.
+
+Для сборки отдельного образа выполняем `make` в соответствующем каталоге. Для "пуша" в `DockerHub` выполняем `make push`. Эти же команды в родительском каталоге будут действовать на все три сервиса.
+
 # HW15 Устройство Gitlab CI. Построение процесса непрерывной поставки.
 
 ## В процессе выполнения ДЗ выполнены следующие мероприятия:
