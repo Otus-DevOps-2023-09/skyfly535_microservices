@@ -1,6 +1,68 @@
 # skyfly535_microservices
 skyfly535 microservices repository
 
+# HW17 Введение в kubernetes.
+
+## В процессе выполнения ДЗ выполнены следующие мероприятия:
+
+1. Описано тестовое приложение в контексте `Kubernetes` с помощью манифестов в формате `yaml`. Для каждого сервиса создан `Deployment манифест`;
+Каталог с подготовленными манифестами `./kubernetes/reddit`. Использованы подготовленные в предыдущих ДЗ контейнеры: `skyfly534/comment`, `skyfly534/post`, `skyfly534/ui`.
+
+2. Подняты при помощи `terraform` две ноды для установки `k8s` с требуемвми характеристиками:
+ - RAM 4
+ - CPU 4
+ - SSD 40 GB
+Процедура развертывания нод была взята из предыдущих ДЗ с небольшими доработками (`./kubernetes/terraform`);
+
+3. Подготовлена конфигурация `Ansible` для развертывания `кластера k8s`: одна нода выполняет роль `master` , вторая - `worker`;
+Динамический инвентори берем также из предыдущих ДЗ. Убеждаемся в работоспособности:
+
+```
+ansible all -m ping
+178.154.204.151 | SUCCESS => {
+    "ansible_facts": {
+        "discovered_interpreter_python": "/usr/bin/python3"
+    },
+    "changed": false,
+    "ping": "pong"
+}
+158.160.123.51 | SUCCESS => {
+    "ansible_facts": {
+        "discovered_interpreter_python": "/usr/bin/python3"
+    },
+    "changed": false,
+    "ping": "pong"
+}
+```
+
+Прописываем хосты, запускаем playbook на исполнение:
+
+```
+ansible-playbook -vv k8s_kubeadm.yml
+```
+После завершения работы плейбука проверяем состояние кластера на `master` ноде:
+
+```
+kubectl get nodes
+NAME                   STATUS   ROLES           AGE     VERSION
+fhm1d49tbkqfgj81so5v   Ready    control-plane   2m16s   v1.28.2
+fhm3bvdi0qvsn4eahq2u   Ready    <none>          76s     v1.28.2
+```
+4. Применены подготовленные манифесты :
+
+```
+kubectl apply -f <manifest>.yml
+```
+Смотрим результат:
+
+```
+kubectl get pods
+NAME                                  READY   STATUS    RESTARTS   AGE
+comment-deployment-6d94947df4-2ljsm   1/1     Running   0          36s
+mongo-deployment-f95c7c4fd-pj4ll      1/1     Running   0          27s
+post-deployment-754f5447d7-ctjxt      1/1     Running   0          20s
+ui-deployment-67b674f4b-txzxl         1/1     Running   0          12s
+```
 # HW16 Введение в мониторинг. Системы мониторинга.
 
 ## В процессе выполнения ДЗ выполнены следующие мероприятия:

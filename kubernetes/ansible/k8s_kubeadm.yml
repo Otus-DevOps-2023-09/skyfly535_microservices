@@ -1,0 +1,82 @@
+- name: k8s by kubeadm
+  hosts: all
+  become: true
+  tasks:
+
+  - name: Add k8s apt-key
+    apt_key:
+      url: https://packages.cloud.google.com/apt/doc/apt-key.gpg
+      state: present
+
+  - name: Add k8s repository
+    apt_repository:
+      repo: deb https://apt.kubernetes.io/ kubernetes-xenial main
+      state: present
+
+  - name: Install k8s utils
+    apt:
+      name: [kubelet, kubeadm, kubectl]
+      state: present
+      update_cache: true
+
+  - name: Install cri-dockerd
+    apt:
+      deb: https://github.com/Mirantis/cri-dockerd/releases/download/v0.3.7/cri-dockerd_0.3.7.3-0.ubuntu-jammy_amd64.deb
+      state: present
+
+
+- name: Main node tasks
+  hosts: 178.154.204.151
+  become: true
+  tasks:
+
+  - name: Init master node
+    shell: kubeadm init --pod-network-cidr=10.128.0.0/16 --cri-socket unix:///var/run/cri-dockerd.sock >> kubeadm_init.txt
+    args:
+      chdir: $HOME
+      creates: kubeadm_init.txt
+
+  - name: Create kubectl config dir
+    file:
+      path: /home/ubuntu/.kube
+      state: directory
+      owner: ubuntu
+      group: ubuntu
+      mode: 0755
+
+  - name: Copy config for kubectl
+    copy:
+      src: /etc/kubernetes/admin.conf
+      dest: /home/ubuntu/.kube/config
+      remote_src: true
+      owner: ubuntu
+      group: ubuntu
+      mode: 0600
+
+  - name: Get join command
+    shell: kubeadm token create --print-join-command
+    register: join_command_out
+
+  - name: Set join command
+    set_fact:
+      join_command: "{{ join_command_out.stdout_lines[0] }}"
+
+  - name: Copy manifests
+    copy:
+      src: ../reddit
+      dest: /home/ubuntu
+
+  - name: Instal calico
+    shell: kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+
+
+- name: Worker node tasks
+  hosts: 158.160.123.51
+  become: true
+  tasks:
+
+  - name: Join cluster
+    shell: "{{ hostvars['178.154.204.151'].join_command }} --cri-socket unix:///var/run/cri-dockerd.sock >> node_joined.txt"
+    args:
+      chdir: $HOME
+      creates: hode_joined.txt

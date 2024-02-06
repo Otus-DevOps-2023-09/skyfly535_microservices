@@ -1,0 +1,12 @@
+service_account_key_file    = "/path/to/key/json"
+cloud_id                    = "example cloud_id"
+folder_id                   = "example folder_id"
+zone                        = "ru-central1-a"
+image_id                    = "example image_id"
+subnet_id                   = "example subnet_id"
+public_key_path             = "~/.ssh/ubuntu.pub"
+server_base_name            = "sky-k8s"
+cpu_count                   = 4
+ram_size                    = 4
+disk_size                   = 40
+nodes_count                 = 2
