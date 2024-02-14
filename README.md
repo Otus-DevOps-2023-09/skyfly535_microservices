@@ -5,17 +5,17 @@ skyfly535 microservices repository
 
 ## В процессе выполнения ДЗ выполнены следующие мероприятия:
 
-1. Подготовленно локальное окружение для работы с Kubernetes:
+1. Подготовлено локальное окружение для работы с Kubernetes:
 
 - kubectl - главная утилита для работы с Kubernets API (все, что делает kubectl, можно сделать с помощью HTTP-запросов к API k8s)
 
-- minikube - утилита для разворачивания локальной инсталяции Kubernetes
+- minikube - утилита для разворачивания локальной инсталляции Kubernetes
 
 - ~/.kube - каталог, который содержит служебную информацию для kubectl (конфиги, кеши, схемы API);
 
 2. Поднят кластер в `minikube`;
 
-Стандартный драйвер для развертывания кластера в minikube docker. В данной конфигурации кластера у меня возникли проблемы с доступом к образам моего акаунта в `Docker Hub`, поэтому кластер был поднят с драйвером `Virtualbox` (с ним проблем не было).
+Стандартный драйвер для развертывания кластера в minikube docker. В данной конфигурации кластера у меня возникли проблемы с доступом к образам моего аккаунта в `Docker Hub`, поэтому кластер был поднят с драйвером `Virtualbox` (с ним проблем не было).
 
 ```
  minikube start --driver=virtualbox
@@ -27,9 +27,9 @@ $ kubectl get nodes
 NAME       STATUS   ROLES           AGE   VERSION
 minikube   Ready    control-plane   32s   v1.28.3
 ```
-3. Приведены в соответствие подготов леные на прошлом ДЗ манифесты `ui-deployment.yml`, `component-deployment.yml`, `post-deployment.yml`, `mongo-deployment.yml` (каталог `./kubernetes/reddit`) для развертывания тестового приложения;
+3. Приведены в соответствие подготовленые на прошлом ДЗ манифесты `ui-deployment.yml`, `component-deployment.yml`, `post-deployment.yml`, `mongo-deployment.yml` (каталог `./kubernetes/reddit`) для развертывания тестового приложения;
 
-4. Развернута ифраструктура из подготовленных манифкстов;
+4. Развернута инфраструктура из подготовленных манифестов;
 
 Можно разворачивать по отдельности
 
@@ -80,11 +80,11 @@ Forwarding from [::1]:8080 -> 9292
 ```
 Проверяем в браузере по адресу `http://127.0.0.1:8080/`
 
-5. Подготовленны манифесты `Service` для связи компонентов между собой и с внешним миром;
+5. Подготовлены манифесты `Service` для связи компонентов между собой и с внешним миром;
 
 Service - абстракция, которая определяет набор POD-ов (Endpoints) и способ доступа к ним.
 
-Созданы слледующие манифесты `comment-service.yml`, `post-service.yml`, `mongodb-service.yml`, `comment-mongodb-service.yml`, `post-mongodb-service.yml` (каталог `./kubernetes/reddit`).
+Созданы следующие манифесты `comment-service.yml`, `post-service.yml`, `mongodb-service.yml`, `comment-mongodb-service.yml`, `post-mongodb-service.yml` (каталог `./kubernetes/reddit`).
 
 ```
 $ kubectl get services
@@ -137,7 +137,7 @@ kubectl port-forward ui-676bf545dc-6496k 8080:9292
 ```
 Идем в браузер `http://127.0.0.1:8080`. Все работает. Пишем посты, сохраняем их.
 
-7. Написан `Service` для `ui` (`ui-service.yml`) для обеспечия доступа к ui снаружи;
+7. Написан `Service` для `ui` (`ui-service.yml`) для обеспечения доступа к ui снаружи;
 
 ```
 $ minikube service ui
@@ -222,7 +222,7 @@ $ minikube addons list
 | volumesnapshots             | minikube | disabled     | Kubernetes                     |
 |-----------------------------|----------|--------------|--------------------------------|
 ```
-8. Запущен `dashboard` для отсележивания состояния и управления кластером;
+8. Запущен `dashboard` для отслеживания состояния и управления кластером;
 
 ```
 $ minikube dashboard
@@ -249,7 +249,7 @@ Ffmpeg version is OK! Let's use it.
 Окно или вкладка откроются в текущем сеансе браузера.
 ```
 
-После активации dashboard она откроется в браузере. Можно посмотреть состояние кластера со всх сторон:
+После активации dashboard она откроется в браузере. Можно посмотреть состояние кластера со всех сторон:
 
 - Отслеживать состояние кластера и рабочих нагрузок в нём;
 
@@ -371,7 +371,7 @@ CoreDNS is running at https://178.154.205.197/api/v1/namespaces/kube-system/serv
 To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
 ```
 
-11. Запущено темтовое приложение приложени в кластере YC;
+11. Запущено тестовое приложение в кластере YC;
 
 ```
 $ kubectl apply -f kubernetes/reddit/dev-namespace.yml
