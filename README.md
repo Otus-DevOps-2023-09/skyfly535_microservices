@@ -1,6 +1,511 @@
 # skyfly535_microservices
 skyfly535 microservices repository
 
+# HW18 Kubernetes. Запуск кластера и приложения. Модель безопасности.
+
+## В процессе выполнения ДЗ выполнены следующие мероприятия:
+
+1. Подготовленно локальное окружение для работы с Kubernetes:
+
+- kubectl - главная утилита для работы с Kubernets API (все, что делает kubectl, можно сделать с помощью HTTP-запросов к API k8s)
+
+- minikube - утилита для разворачивания локальной инсталяции Kubernetes
+
+- ~/.kube - каталог, который содержит служебную информацию для kubectl (конфиги, кеши, схемы API);
+
+2. Поднят кластер в `minikube`;
+
+Стандартный драйвер для развертывания кластера в minikube docker. В данной конфигурации кластера у меня возникли проблемы с доступом к образам моего акаунта в `Docker Hub`, поэтому кластер был поднят с драйвером `Virtualbox` (с ним проблем не было).
+
+```
+ minikube start --driver=virtualbox
+```
+В процессе поднятия кластера автоматически настраивается `kubectl`.
+
+```
+$ kubectl get nodes
+NAME       STATUS   ROLES           AGE   VERSION
+minikube   Ready    control-plane   32s   v1.28.3
+```
+3. Приведены в соответствие подготов леные на прошлом ДЗ манифесты `ui-deployment.yml`, `component-deployment.yml`, `post-deployment.yml`, `mongo-deployment.yml` (каталог `./kubernetes/reddit`) для развертывания тестового приложения;
+
+4. Развернута ифраструктура из подготовленных манифкстов;
+
+Можно разворачивать по отдельности
+
+```
+kubectl apply -f ui-deployment.yml
+
+kubectl apply -f component-deployment.yml
+
+kubectl apply -f post-deployment.yml
+
+kubectl apply -f mongo-deployment.yml
+```
+Можно все сразу
+
+```
+kubectl apply -f kubernetes/reddit
+```
+
+Проверяем:
+
+```
+$  kubectl get pods
+NAME                       READY   STATUS    RESTARTS   AGE
+comment-698585b76f-48nbc   1/1     Running   0          116s
+comment-698585b76f-8pgqf   1/1     Running   0          116s
+comment-698585b76f-qr8v2   1/1     Running   0          116s
+mongo-64c9bf74db-hbj9n     1/1     Running   0          116s
+post-6b48846c57-8hkjs      1/1     Running   0          116s
+post-6b48846c57-gtxfs      1/1     Running   0          116s
+post-6b48846c57-pfzh7      1/1     Running   0          116s
+ui-676bf545dc-6496k        1/1     Running   0          116s
+ui-676bf545dc-7np2q        1/1     Running   0          116s
+ui-676bf545dc-tqfps        1/1     Running   0          116s
+
+$ kubectl get deployment
+NAME      READY   UP-TO-DATE   AVAILABLE   AGE
+comment   3/3     3            3           2m35s
+mongo     1/1     1            1           2m35s
+post      3/3     3            3           2m35s
+ui        3/3     3            3           2m35s
+```
+Можно пробросить порт пода на локальную машину:
+
+```
+kubectl port-forward ui-676bf545dc-6496k 8080:9292
+Forwarding from 127.0.0.1:8080 -> 9292
+Forwarding from [::1]:8080 -> 9292
+```
+Проверяем в браузере по адресу `http://127.0.0.1:8080/`
+
+5. Подготовленны манифесты `Service` для связи компонентов между собой и с внешним миром;
+
+Service - абстракция, которая определяет набор POD-ов (Endpoints) и способ доступа к ним.
+
+Созданы слледующие манифесты `comment-service.yml`, `post-service.yml`, `mongodb-service.yml`, `comment-mongodb-service.yml`, `post-mongodb-service.yml` (каталог `./kubernetes/reddit`).
+
+```
+$ kubectl get services
+NAME         TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)          AGE
+comment      ClusterIP   10.105.43.64     <none>        9292/TCP         13m
+comment-db   ClusterIP   10.108.160.146   <none>        27017/TCP        13m
+kubernetes   ClusterIP   10.96.0.1        <none>        443/TCP          26m
+mongodb      ClusterIP   10.102.121.56    <none>        27017/TCP        13m
+post         ClusterIP   10.107.58.225    <none>        5000/TCP         13m
+post-db      ClusterIP   10.111.128.9     <none>        27017/TCP        13m
+ui           NodePort    10.100.170.152   <none>        9292:31702/TCP   13m
+```
+
+6. Переназначены переменные окружения, указывающие на сервис `comment_db` в deployment сервисов `ui`, `comment`;
+
+Если пробросить порт сервиса ui наружу, попытаться подключиться к нему, то мы увидим ошибку. Сервис ui ищет совсем другой адрес: comment_db, а не mongodb, как и сервис comment ищет post_db. Эти адреса заданы в их `Dockerfile` в виде переменных окружения: `POST_DATABASE_HOST=post_db` и `COMMENT_DATABASE_HOST=comment_db`.
+
+```
+comment-deployment.yml
+
+containers:
+- image: skyfly534/comment
+  name: comment
+  env:
+  - name: COMMENT_DATABASE_HOST
+    value: mongodb
+```
+
+```
+post-deployment.yml
+
+containers:
+- image: r2d2k/post
+  name: post
+  env:
+  - name: POST_DATABASE_HOST
+    value: mongodb
+```
+
+Пересобираем
+
+```
+kubectl apply -f kubernetes/reddit
+```
+
+Пробрасываем порт
+
+```
+kubectl port-forward ui-676bf545dc-6496k 8080:9292
+```
+Идем в браузер `http://127.0.0.1:8080`. Все работает. Пишем посты, сохраняем их.
+
+7. Написан `Service` для `ui` (`ui-service.yml`) для обеспечия доступа к ui снаружи;
+
+```
+$ minikube service ui
+|-----------|------|-------------|-----------------------------|
+| NAMESPACE | NAME | TARGET PORT |             URL             |
+|-----------|------|-------------|-----------------------------|
+| default   | ui   |        9292 | http://192.168.59.101:31702 |
+|-----------|------|-------------|-----------------------------|
+🎉  Opening service default/ui in default browser...
+roman@root-ubuntu:~/DevOps/skyfly535_microservices$ Found ffmpeg: /opt/yandex/browser-beta/libffmpeg.so
+	avcodec: 3876708
+	avformat: 3874148
+	avutil: 3743332
+Ffmpeg version is OK! Let's use it.
+[43557:43557:0214/193723.242300:ERROR:variations_seed_processor.cc(253)] Trial from abt study=BREXP-6200 already created
+[43557:43557:0214/193723.242607:ERROR:variations_seed_processor.cc(253)] Trial from abt study=Spaces already created
+[43557:43557:0214/193723.583001:ERROR:isolated_origin_util.cc(74)] Ignoring port number in isolated origin: chrome://custo
+Окно или вкладка откроются в текущем сеансе браузера.
+```
+
+```
+$ minikube service list
+|-------------|------------|--------------|-----------------------------|
+|  NAMESPACE  |    NAME    | TARGET PORT  |             URL             |
+|-------------|------------|--------------|-----------------------------|
+| default     | comment    | No node port |                             |
+| default     | comment-db | No node port |                             |
+| default     | kubernetes | No node port |                             |
+| default     | mongodb    | No node port |                             |
+| default     | post       | No node port |                             |
+| default     | post-db    | No node port |                             |
+| default     | ui         |         9292 | http://192.168.59.101:31702 |
+| kube-system | kube-dns   | No node port |                             |
+|-------------|------------|--------------|-----------------------------|
+```
+
+В комплекте с minikube идёт достаточно большое количество дополнений:
+
+```
+$ minikube addons list
+|-----------------------------|----------|--------------|--------------------------------|
+|         ADDON NAME          | PROFILE  |    STATUS    |           MAINTAINER           |
+|-----------------------------|----------|--------------|--------------------------------|
+| ambassador                  | minikube | disabled     | 3rd party (Ambassador)         |
+| auto-pause                  | minikube | disabled     | minikube                       |
+| cloud-spanner               | minikube | disabled     | Google                         |
+| csi-hostpath-driver         | minikube | disabled     | Kubernetes                     |
+| dashboard                   | minikube | disabled     | Kubernetes                     |
+| default-storageclass        | minikube | enabled ✅   | Kubernetes                     |
+| efk                         | minikube | disabled     | 3rd party (Elastic)            |
+| freshpod                    | minikube | disabled     | Google                         |
+| gcp-auth                    | minikube | disabled     | Google                         |
+| gvisor                      | minikube | disabled     | minikube                       |
+| headlamp                    | minikube | disabled     | 3rd party (kinvolk.io)         |
+| helm-tiller                 | minikube | disabled     | 3rd party (Helm)               |
+| inaccel                     | minikube | disabled     | 3rd party (InAccel             |
+|                             |          |              | [info@inaccel.com])            |
+| ingress                     | minikube | disabled     | Kubernetes                     |
+| ingress-dns                 | minikube | disabled     | minikube                       |
+| inspektor-gadget            | minikube | disabled     | 3rd party                      |
+|                             |          |              | (inspektor-gadget.io)          |
+| istio                       | minikube | disabled     | 3rd party (Istio)              |
+| istio-provisioner           | minikube | disabled     | 3rd party (Istio)              |
+| kong                        | minikube | disabled     | 3rd party (Kong HQ)            |
+| kubeflow                    | minikube | disabled     | 3rd party                      |
+| kubevirt                    | minikube | disabled     | 3rd party (KubeVirt)           |
+| logviewer                   | minikube | disabled     | 3rd party (unknown)            |
+| metallb                     | minikube | disabled     | 3rd party (MetalLB)            |
+| metrics-server              | minikube | disabled     | Kubernetes                     |
+| nvidia-device-plugin        | minikube | disabled     | 3rd party (NVIDIA)             |
+| nvidia-driver-installer     | minikube | disabled     | 3rd party (Nvidia)             |
+| nvidia-gpu-device-plugin    | minikube | disabled     | 3rd party (Nvidia)             |
+| olm                         | minikube | disabled     | 3rd party (Operator Framework) |
+| pod-security-policy         | minikube | disabled     | 3rd party (unknown)            |
+| portainer                   | minikube | disabled     | 3rd party (Portainer.io)       |
+| registry                    | minikube | disabled     | minikube                       |
+| registry-aliases            | minikube | disabled     | 3rd party (unknown)            |
+| registry-creds              | minikube | disabled     | 3rd party (UPMC Enterprises)   |
+| storage-provisioner         | minikube | enabled ✅   | minikube                       |
+| storage-provisioner-gluster | minikube | disabled     | 3rd party (Gluster)            |
+| storage-provisioner-rancher | minikube | disabled     | 3rd party (Rancher)            |
+| volumesnapshots             | minikube | disabled     | Kubernetes                     |
+|-----------------------------|----------|--------------|--------------------------------|
+```
+8. Запущен `dashboard` для отсележивания состояния и управления кластером;
+
+```
+$ minikube dashboard
+🔌  Enabling dashboard ...
+    ▪ Используется образ docker.io/kubernetesui/dashboard:v2.7.0
+    ▪ Используется образ docker.io/kubernetesui/metrics-scraper:v1.0.8
+💡  Some dashboard features require the metrics-server addon. To enable all features please run:
+
+	minikube addons enable metrics-server
+
+
+🤔  Verifying dashboard health ...
+🚀  Launching proxy ...
+🤔  Verifying proxy health ...
+🎉  Opening http://127.0.0.1:36359/api/v1/namespaces/kubernetes-dashboard/services/http:kubernetes-dashboard:/proxy/ in your default browser...
+Found ffmpeg: /opt/yandex/browser-beta/libffmpeg.so
+	avcodec: 3876708
+	avformat: 3874148
+	avutil: 3743332
+Ffmpeg version is OK! Let's use it.
+[45337:45337:0214/195604.197044:ERROR:variations_seed_processor.cc(253)] Trial from abt study=BREXP-6200 already created
+[45337:45337:0214/195604.197256:ERROR:variations_seed_processor.cc(253)] Trial from abt study=Spaces already created
+[45337:45337:0214/195604.461036:ERROR:isolated_origin_util.cc(74)] Ignoring port number in isolated origin: chrome://custo
+Окно или вкладка откроются в текущем сеансе браузера.
+```
+
+После активации dashboard она откроется в браузере. Можно посмотреть состояние кластера со всх сторон:
+
+- Отслеживать состояние кластера и рабочих нагрузок в нём;
+
+- Создавать новые объекты (загружать YAML-файлы);
+
+- Удалять и изменять объекты (кол-во реплик, YAML-файлы);
+
+- Отслеживать логи в POD-ах;
+
+- При включении Heapster-аддона смотреть нагрузку на POD-ах.
+
+9. Подготовлен манифест `dev-namespace.yml` для отделения среды разработки тестового приложения от всего остального;
+
+Для того, чтобы выбрать конкретное пространство имен, нужно указать флаг `-n` или `–namespace` при запуске kubectl.
+
+Проверяем имеющиеся у нас в кластере
+
+```
+$ kubectl get all -n kube-system
+NAME                                   READY   STATUS    RESTARTS   AGE
+pod/coredns-5dd5756b68-lb2wk           1/1     Running   0          52m
+pod/etcd-minikube                      1/1     Running   0          53m
+pod/kube-apiserver-minikube            1/1     Running   0          53m
+pod/kube-controller-manager-minikube   1/1     Running   0          53m
+pod/kube-proxy-bbfqc                   1/1     Running   0          52m
+pod/kube-scheduler-minikube            1/1     Running   0          53m
+pod/storage-provisioner                1/1     Running   0          53m
+
+NAME               TYPE        CLUSTER-IP   EXTERNAL-IP   PORT(S)                  AGE
+service/kube-dns   ClusterIP   10.96.0.10   <none>        53/UDP,53/TCP,9153/TCP   53m
+
+NAME                        DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR            AGE
+daemonset.apps/kube-proxy   1         1         1       1            1           kubernetes.io/os=linux   53m
+
+NAME                      READY   UP-TO-DATE   AVAILABLE   AGE
+deployment.apps/coredns   1/1     1            1           53m
+
+NAME                                 DESIRED   CURRENT   READY   AGE
+replicaset.apps/coredns-5dd5756b68   1         1         1       53m
+```
+
+При старте Kubernetes кластер имеет 3 namespace:
+
+- default - для объектов для которых не определен другой Namespace (в нём мы работали все это время)
+- kube-system - для объектов созданных Kubernetes и для управления им
+- kube-public - для объектов к которым нужен доступ из любой точки кластера
+
+Для того, чтобы выбрать конкретное пространство имен, нужно указать флаг `-n` или `–namespace` при запуске kubectl.
+
+```
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: dev
+```
+Применим изменения
+
+```
+$ kubectl apply -f dev-namespace.yml
+namespace/dev created
+
+$ kubectl apply -n dev -f kubernetes/reddit/
+```
+10. Создан Kubernetes кластер под названием `skyfly535` через веб-интерфейс консоли `Yandex Cloud` (`Managed Service for kubernetes`);
+
+- Идём в Yandex Cloud, перейдите в "Managed Service for kubernetes"
+
+- Жмём "Создать Cluster"
+
+- Имя кластера может быть произвольным
+
+- Если нет сервис аккаунта его можно создать
+
+- Релизный канал *** Rapid ***
+
+- Версия k8s 1.25
+
+- Зона доступности - на ваше усмотрение (сети - аналогично)
+
+- Жмём "Создать"" и ждём, пока поднимется кластер
+
+После создания кластера, вам нужно создать группу узлов, входящих в кластер
+
+- Версия k8s 1.25
+
+- Количество узлов - 2
+
+- vCPU - 4
+
+- RAM - 8
+
+- Disk - SSD 96ГБ (минимальное значение)
+
+- В поле "Доступ" добавьте свой логин и публичный ssh-ключ
+
+После поднятия кластера настраиваем к нему доступ:
+
+```
+$ yc managed-kubernetes cluster get-credentials skyfly535 --external
+
+Context 'yc-skyfly535' was added as default to kubeconfig '/home/roman/.kube/config'.
+Check connection to cluster using 'kubectl cluster-info --kubeconfig /home/roman/.kube/config'.
+
+Note, that authentication depends on 'yc' and its config profile 'terraform-profile'.
+To access clusters using the Kubernetes API, please use Kubernetes Service Account.
+
+$ kubectl config get-contexts
+CURRENT   NAME           CLUSTER                               AUTHINFO                              NAMESPACE
+          yc-skyfly      yc-managed-k8s-cat2ru389rf94j781as5   yc-managed-k8s-cat2ru389rf94j781as5
+          yc-skyfly534   yc-managed-k8s-cat895hbh2845cqv67tb   yc-managed-k8s-cat895hbh2845cqv67tb
+*         yc-skyfly535   yc-managed-k8s-catcovvk572g06lr0tqj   yc-managed-k8s-catcovvk572g06lr0tqj
+```
+вводим команду из выхлопа команды `yc managed-kubernetes cluster get-credentials skyfly535 --external`
+```
+$ kubectl cluster-info --kubeconfig /home/roman/.kube/config
+Kubernetes control plane is running at https://178.154.205.197
+CoreDNS is running at https://178.154.205.197/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+```
+
+11. Запущено темтовое приложение приложени в кластере YC;
+
+```
+$ kubectl apply -f kubernetes/reddit/dev-namespace.yml
+namespace/dev created
+
+$ kubectl apply -n dev -f kubernetes/reddit/
+deployment.apps/comment created
+service/comment-db created
+service/comment created
+namespace/dev unchanged
+deployment.apps/mongo created
+service/mongodb created
+deployment.apps/post created
+service/post-db created
+service/post created
+deployment.apps/ui created
+service/ui created
+
+$ kubectl get services -n dev
+NAME         TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)          AGE
+comment      ClusterIP   10.96.245.190   <none>        9292/TCP         39s
+comment-db   ClusterIP   10.96.207.56    <none>        27017/TCP        40s
+mongodb      ClusterIP   10.96.208.88    <none>        27017/TCP        37s
+post         ClusterIP   10.96.211.182   <none>        5000/TCP         36s
+post-db      ClusterIP   10.96.245.177   <none>        27017/TCP        36s
+ui           NodePort    10.96.152.96    <none>        9292:31758/TCP   35s
+
+$ kubectl get pods -n dev
+NAME                       READY   STATUS    RESTARTS   AGE
+comment-56cbfb5bdc-gftjr   1/1     Running   0          54s
+comment-56cbfb5bdc-j2dnw   1/1     Running   0          54s
+comment-56cbfb5bdc-n8sqb   1/1     Running   0          54s
+mongo-7f764c4b5b-6h78x     1/1     Running   0          52s
+post-6848446659-8786l      1/1     Running   0          51s
+post-6848446659-8pnkl      1/1     Running   0          51s
+post-6848446659-phrg7      1/1     Running   0          51s
+ui-59446c685-64ttz         1/1     Running   0          49s
+ui-59446c685-dmkdt         1/1     Running   0          49s
+ui-59446c685-fbng5         1/1     Running   0          49s
+
+$ kubectl get nodes -o wide
+NAME                        STATUS   ROLES    AGE   VERSION   INTERNAL-IP   EXTERNAL-IP       OS-IMAGE             KERNEL-VERSION      CONTAINER-RUNTIME
+cl1rb9rs892oqjsut8v4-iwuj   Ready    <none>   92m   v1.25.4   10.128.0.15   178.154.205.124   Ubuntu 20.04.6 LTS   5.4.0-167-generic   containerd://1.6.22
+cl1v5h010ohkknr8cbbs-ehot   Ready    <none>   92m   v1.25.4   10.128.0.23   158.160.107.18    Ubuntu 20.04.6 LTS   5.4.0-167-generic   containerd://1.6.22
+```
+Идем в браузер `http://178.154.205.124:31758/`, проверяем. Все работает.
+
+12. Развернут Kubernetes-кластер в YC с помощью `Terraform`;
+
+Нагуглена конфигурация Terraform для развертывания Kubernetes кластера с использованием ресурсов `yandex_kubernetes_cluster` и `yandex_kubernetes_node_group` (каталог `./kubernetes/terraform_YC_k8s`).
+
+```
+$ kubectl cluster-info
+Kubernetes control plane is running at https://178.154.205.197
+CoreDNS is running at https://178.154.205.197/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+```
+13. Создан `YAML-манифесты` для описания созданных сущностей для включения `dashboard`;
+
+Для установки dashboard воспользуемся стандартным манифестом со страницы разработчика (https://kubernetes.io/docs/tasks/access-application-cluster/web-ui-dashboard/).
+Сохраним манифест в каталог kubernetes/dashboard.
+
+```
+$ wget https://raw.githubusercontent.com/kubernetes/dashboard/v2.7.0/aio/deploy/recommended.yaml
+```
+
+Для того, чтобы полноценно управлять кластером, нужно создать пользователя с ролью `cluster-admin`. Подготовим манифесты `admin-account.yaml` `admin-roleBinding.yaml` и сохраним их рядом с манифестом dashboard.
+
+Применяем
+
+```
+kubectl apply -f dashboard/
+serviceaccount/admin-user created
+clusterrolebinding.rbac.authorization.k8s.io/admin-user unchanged
+namespace/kubernetes-dashboard unchanged
+serviceaccount/kubernetes-dashboard unchanged
+service/kubernetes-dashboard unchanged
+secret/kubernetes-dashboard-certs unchanged
+secret/kubernetes-dashboard-csrf configured
+Warning: resource secrets/kubernetes-dashboard-key-holder is missing the kubectl.kubernetes.io/last-applied-configuration annotation which is required by kubectl apply. kubectl apply should only be used on resources created declaratively by either kubectl create --save-config or kubectl apply. The missing annotation will be patched automatically.
+secret/kubernetes-dashboard-key-holder configured
+configmap/kubernetes-dashboard-settings unchanged
+role.rbac.authorization.k8s.io/kubernetes-dashboard unchanged
+clusterrole.rbac.authorization.k8s.io/kubernetes-dashboard unchanged
+rolebinding.rbac.authorization.k8s.io/kubernetes-dashboard unchanged
+clusterrolebinding.rbac.authorization.k8s.io/kubernetes-dashboard unchanged
+deployment.apps/kubernetes-dashboard unchanged
+service/dashboard-metrics-scraper unchanged
+deployment.apps/dashboard-metrics-scraper unchanged
+
+$ kubectl get pods --all-namespaces
+NAMESPACE              NAME                                                  READY   STATUS    RESTARTS       AGE
+dev                    comment-56cbfb5bdc-gftjr                              1/1     Running   0              22m
+dev                    comment-56cbfb5bdc-j2dnw                              1/1     Running   0              22m
+dev                    comment-56cbfb5bdc-n8sqb                              1/1     Running   0              22m
+dev                    mongo-7f764c4b5b-6h78x                                1/1     Running   0              22m
+dev                    post-6848446659-8786l                                 1/1     Running   0              22m
+dev                    post-6848446659-8pnkl                                 1/1     Running   0              22m
+dev                    post-6848446659-phrg7                                 1/1     Running   0              22m
+dev                    ui-59446c685-64ttz                                    1/1     Running   0              21m
+dev                    ui-59446c685-dmkdt                                    1/1     Running   0              21m
+dev                    ui-59446c685-fbng5                                    1/1     Running   0              21m
+kube-system            calico-node-l4lzt                                     1/1     Running   0              112m
+kube-system            calico-node-ndh9j                                     1/1     Running   0              113m
+kube-system            calico-typha-7dc6645875-659s7                         1/1     Running   0              111m
+kube-system            calico-typha-horizontal-autoscaler-785c94fb55-tr4zn   1/1     Running   0              115m
+kube-system            calico-typha-vertical-autoscaler-7679879786-qb2ck     1/1     Running   3 (112m ago)   115m
+kube-system            coredns-5c5df59fd4-jlqbh                              1/1     Running   0              115m
+kube-system            coredns-5c5df59fd4-jwf9q                              1/1     Running   0              112m
+kube-system            ip-masq-agent-c6wzw                                   1/1     Running   0              113m
+kube-system            ip-masq-agent-z87rp                                   1/1     Running   0              112m
+kube-system            kube-dns-autoscaler-55c4f55869-rdvvv                  1/1     Running   0              115m
+kube-system            kube-proxy-r9xzs                                      1/1     Running   0              113m
+kube-system            kube-proxy-tfrrs                                      1/1     Running   0              112m
+kube-system            metrics-server-9b4bf686c-55lr2                        2/2     Running   0              112m
+kube-system            npd-v0.8.0-9724z                                      1/1     Running   0              112m
+kube-system            npd-v0.8.0-pdqtv                                      1/1     Running   0              113m
+kube-system            yc-disk-csi-node-v2-jgk5d                             6/6     Running   0              113m
+kube-system            yc-disk-csi-node-v2-qbtpp                             6/6     Running   0              112m
+kubernetes-dashboard   dashboard-metrics-scraper-64bcc67c9c-lgtzd            1/1     Running   0              25s
+kubernetes-dashboard   kubernetes-dashboard-5c8bd6b59-lnplz                  1/1     Running   0              27s
+```
+Получаем `Bearer Token` для `ServiceAccount`
+
+```
+kubectl -n kubernetes-dashboard create token admin-user
+```
+выполняем `kubectl proxy`, Dashboard UI открывается через URL http://localhost:8001/api/v1/namespaces/kubernetes-dashboard/services/https:kubernetes-dashboard:/proxy/
+
+Вводим токен для авторизации и попадаем в `dashboard`.
+
+![Alt text](k8s_dashboard.jpg)
+
 # HW17 Введение в kubernetes.
 
 ## В процессе выполнения ДЗ выполнены следующие мероприятия:
