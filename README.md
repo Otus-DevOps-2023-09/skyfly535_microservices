@@ -287,7 +287,7 @@ Spec:
   Not affecting egress traffic
   Policy Types: Ingress
 ```
-10. Создано постоянное хранилище данных для `mongodb` при помощи `PersistentVolume`;
+10. Создано постоянное хранилище данных для `mongodb` при помощи `PersistentVolume`.
 
 Основной Stateful сервис в нашем приложении - это базы данных MongoDB. В текущий момент она запускается в виде Deployment и хранит данные в стандартных Docker Volume-ах. Это имеет несколько проблем:
 
