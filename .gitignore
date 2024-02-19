@@ -8,3 +8,12 @@ variables.json
 *.lock.hcl
 .env
 *.pkrvars.hcl
+*.tfbackend
+.terraform/
+terraform-key.json
+ansible-key.json
+packer-key.json
+yc.yml
+
+tls.crt
+tls.key
