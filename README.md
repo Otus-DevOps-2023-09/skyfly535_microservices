@@ -65,7 +65,7 @@ Check connection to cluster using 'kubectl cluster-info --kubeconfig /home/roman
 Note, that authentication depends on 'yc' and its config profile 'terraform-profile'.
 To access clusters using the Kubernetes API, please use Kubernetes Service Account.
 ```
-3. Запущен тестовый сервис `ui` при помощи helm
+3. Запущен тестовый сервис `ui` при помощи helm;
 ```
 $ helm install test-ui-1 ui/
 NAME: test-ui-1
@@ -1447,7 +1447,7 @@ production:
         reddit
 ```
 
-11. Добавлен блок в конфигурацию `CI` сервисов для автоматического запуска деплоя после сборки образов:
+11. Добавлен блок в конфигурацию `CI` сервисов для автоматического запуска деплоя после сборки образов.
 
 ```
 deploy-app:
