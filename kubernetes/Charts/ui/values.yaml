@@ -1,0 +1,13 @@
+service:
+  internalPort: 9292
+  externalPort: 9292
+image:
+  repository: skyfly534/ui
+  tag: latest
+ingress:
+  class: nginx
+
+postHost:
+postPort:
+commentHost:
+commentPort:

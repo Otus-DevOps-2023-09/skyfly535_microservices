@@ -1,0 +1,7 @@
+name: reddit
+version: 0.1.0
+description: OTUS reddit application
+maintainers:
+  - name: Roman Kozlovsky
+    email: me@me.me
+appVersion: 1.0

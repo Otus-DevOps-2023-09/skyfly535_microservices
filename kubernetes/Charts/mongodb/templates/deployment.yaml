@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ template "mongodb.fullname" . }}
+  labels:
+    app: reddit
+    component: mongodb
+    release: {{ .Release.Name }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: reddit
+      component: mongodb
+      release: {{ .Release.Name }}
+  template:
+    metadata:
+      name: mongodb
+      labels:
+        app: reddit
+        component: mongodb
+        release: {{ .Release.Name }}
+    spec:
+      containers:
+      - image: {{ .Values.image.repository }}:{{ .Values.image.tag }}
+        name: mongodb
+        ports:
+        - containerPort: {{ .Values.service.internalPort }}
+          name: mongodb
+          protocol: TCP
