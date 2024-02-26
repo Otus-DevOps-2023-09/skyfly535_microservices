@@ -1,0 +1,7 @@
+name: mongodb
+version: 1.0.0
+description: OTUS reddit application MONGODB
+maintainers:
+  - name: me
+    email: me@me.me
+appVersion: 1.0
