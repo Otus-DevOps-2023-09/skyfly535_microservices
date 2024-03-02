@@ -1,6 +1,458 @@
 # skyfly535_microservices
 skyfly535 microservices repository
 
+# HW21 Применение системы логирования в инфраструктуре на основе Docker (должок).
+
+## В процессе выполнения ДЗ выполнены следующие мероприятия:
+
+1. В YC cоздан хост и инициализировано окружение `Docker` на нем `docker-machine create`;
+
+```
+$ yc compute instance create \
+>   --name worker \
+>   --zone ru-central1-a \
+>   --network-interface subnet-name=netterraform-ru-central1-a,nat-ip-version=ipv4 \
+>   --create-boot-disk image-folder-id=standard-images,image-family=ubuntu-1804-lts,size=15 \
+>   --memory 8 --cores 4 --core-fraction 100 \
+>   --ssh-key ~/.ssh/ubuntu.pub
+done (31s)
+
+$ docker-machine create \
+>   --driver generic \
+>   --generic-ip-address=51.250.88.176 \
+>   --generic-ssh-user yc-user \
+>   --generic-ssh-key ~/.ssh/ubuntu  \
+>   docker-host
+Running pre-create checks...
+...
+Docker is up and running!
+To see how to connect your Docker Client to the Docker Engine running on this virtual machine, run: docker-machine env docker-host
+
+eval $(docker-machine env docker-host)
+```
+2. Подготовлено окружение. Скачана новая ветка reddit. Скопированы файлы в каталог приложения `./src.`;
+
+```
+git clone https://github.com/express42/reddit.git
+```
+3. Выполнена сборка образов ui, post, comment с тэгами `logging`;
+
+```
+$ export USER_NAME=skyfly534
+
+/src$ cd ui && bash docker_build.sh && docker push $USER_NAME/ui
+
+...
+
+$ cd ../post-py && bash docker_build.sh && docker push $USER_NAME/post
+...
+
+$ cd ../comment && bash docker_build.sh && docker push $USER_NAME/comment
+...
+
+$ docker images
+REPOSITORY          TAG       IMAGE ID       CREATED          SIZE
+skyfly534/comment   logging   5c0952de5afb   9 minutes ago    89.1MB
+skyfly534/post      logging   822d0f5d8e8c   11 minutes ago   210MB
+skyfly534/ui        logging   dd98a7f398ae   14 minutes ago   188MB
+```
+4. Создан файл `docker-compose-logginig.yml` для системы логирования стек `EFK` ElasticSearch + Fluentd + Kibana;
+
+./docker/docker-compose-logging.yml
+
+```
+version: '3'
+services:
+  fluentd:
+    image: ${USERNAME}/fluentd
+    ports:
+      - "24224:24224"
+      - "24224:24224/udp"
+
+  elasticsearch:
+    image: elasticsearch:7.4.0
+    environment:
+      - ELASTIC_CLUSTER=false
+      - CLUSTER_NODE_MASTER=true
+      - CLUSTER_MASTER_NODE_NAME=es01
+      - discovery.type=single-node
+    expose:
+      - 9200
+    ports:
+      - "9200:9200"
+
+  kibana:
+    image: kibana:7.4.0
+    ports:
+      - "5601:5601"
+```
+5. Для запуска `Fluentd` созданы файлы Dockerfile и конфигурации для Fluentd, выполнена сборка образа;
+
+./logging/fluentd/Dockerfile
+
+```
+FROM fluent/fluentd:v1.14.0-1.0
+USER root
+RUN gem uninstall -I elasticsearch && gem install elasticsearch -v 7.17.1
+RUN gem install fluent-plugin-elasticsearch --no-document --version 5.2.3
+RUN gem install fluent-plugin-grok-parser --no-document --version 2.6.2
+USER fluent
+ADD fluent.conf /fluentd/etc
+```
+./logging/fluentd/fluent.conf
+
+```
+<source>
+  @type forward
+  port 24224
+  bind 0.0.0.0
+</source>
+
+<match *.**>
+  @type copy
+  <store>
+    @type elasticsearch
+    host elasticsearch
+    port 9200
+    logstash_format true
+    logstash_prefix fluentd
+    logstash_dateformat %Y%m%d
+    include_tag_key true
+    type_name access_log
+    tag_key @log_name
+    flush_interval 1s
+  </store>
+  <store>
+    @type stdout
+  </store>
+</match>
+```
+Билдим образ
+
+```
+./logging/fluentd$ docker build -t skyfly534/fluentd .
+[+] Building 234.5s (11/11) FINISHED
+ => [internal] load build definition from Dockerfile
+
+...
+
+=> => naming to docker.io/skyfly534/fluentd
+
+$ docker images
+REPOSITORY          TAG       IMAGE ID       CREATED          SIZE
+skyfly534/fluentd   latest    ea25c7dd2003   16 seconds ago   124MB
+skyfly534/comment   logging   5c0952de5afb   23 minutes ago   89.1MB
+skyfly534/post      logging   822d0f5d8e8c   26 minutes ago   210MB
+skyfly534/ui        logging   dd98a7f398ae   28 minutes ago   188MB
+```
+6. Откорректирован файл `docker-compose.yml` и поднят тестовый сайт;
+
+```
+--- a/docker/docker-compose.yml
++++ b/docker/docker-compose.yml
+services:
+       - back_net
+
+   ui:
+-    image: ${USERNAME}/ui:latest
++    image: ${USERNAME}/ui:logging
+     ports:
+       - ${UI_PORT}:9292/tcp
+     networks:
+       - front_net
+
+   post:
+-    image: ${USERNAME}/post:latest
++    image: ${USERNAME}/post:logging
+     networks:
+       - back_net
+       - front_net
+
+   comment:
+-    image: ${USERNAME}/comment:latest
++    image: ${USERNAME}/comment:logging
+     networks:
+       - back_net
+       - front_net
+-  prometheus:
+-    image: ${USERNAME}/prometheus:latest
+-    ports:
+-      - '9090:9090'
+-    volumes:
+-      - prometheus_data:/prometheus
+-    command:
+-      - '--config.file=/etc/prometheus/prometheus.yml'
+-      - '--storage.tsdb.path=/prometheus'
+-      - '--storage.tsdb.retention=1d'
+-    networks:
+-      - front_net
+-      - back_net
+-
+-  node-exporter:
+-    image: prom/node-exporter:v0.15.2
+-    user: root
+-    volumes:
+-      - /proc:/host/proc:ro
+-      - /sys:/host/sys:ro
+-      - /:/rootfs:ro
+-    command:
+-      - '--path.procfs=/host/proc'
+-      - '--path.sysfs=/host/sys'
+-      - '--collector.filesystem.ignored-mount-points="^/(sys|proc|dev|host|etc)($$|/)"'
+-    networks:
+-      - front_net
+-      - back_net
+-
+-  mongo-exporter:
+-    image: percona/mongodb_exporter:0.35
+-    command:
+-      - '--mongodb.uri=mongodb://post_db:27017'
+-      - '--collect-all'
+-      - '--log.level=debug'
+-    ports:
+-      - '9216:9216'
+-    networks:
+-      - back_net
+-
+-  blackbox-exporter:
+-    image: r2d2k/blackbox-exporter:1.0
+-    ports:
+-      - '9115:9115'
+-    networks:
+-      - front_net
+-
+ volumes:
+   post_db:
+-  prometheus_data:
+
+ networks:
+   front_net:
+```
+
+Настроим драйвер логирования для сервиса `post`
+
+```
+--- a/docker/docker-compose.yml
++++ b/docker/docker-compose.yml
+services:
+     networks:
+       - back_net
+       - front_net
++    logging:
++      driver: "fluentd"
++      options:
++        fluentd-address: localhost:24224
++        tag: service.post
+
+   comment:
+     image: ${USERNAME}/comment:logging
+```
+
+Запускаем сайт и EFK стек
+
+```
+./docker$ docker compose -f docker-compose-logging.yml up -d
+
+./docker$ docker compose up -d
+
+$ docker compose ps
+NAME                        IMAGE                       COMMAND                  SERVICE             CREATED             STATUS              PORTS
+skyfly534-comment-1         skyfly534/comment:logging   "puma"                   comment             5 minutes ago       Up 5 minutes
+skyfly534-elasticsearch-1   elasticsearch:7.4.0         "/usr/local/bin/dock…"   elasticsearch       6 minutes ago       Up 6 minutes        0.0.0.0:9200->9200/tcp, :::9200->9200/tcp, 9300/tcp
+skyfly534-fluentd-1         skyfly534/fluentd           "tini -- /bin/entryp…"   fluentd             6 minutes ago       Up 6 minutes        5140/tcp, 0.0.0.0:24224->24224/tcp, 0.0.0.0:24224->24224/udp, :::24224->24224/tcp, :::24224->24224/udp
+skyfly534-kibana-1          kibana:7.4.0                "/usr/local/bin/dumb…"   kibana              6 minutes ago       Up 6 minutes        0.0.0.0:5601->5601/tcp, :::5601->5601/tcp
+skyfly534-mongo_db-1        mongo:3.2                   "docker-entrypoint.s…"   mongo_db            5 minutes ago       Up 5 minutes        27017/tcp
+skyfly534-post-1            skyfly534/post:logging      "python3 post_app.py"    post                5 minutes ago       Up 5 minutes
+skyfly534-ui-1              skyfly534/ui:logging        "puma"                   ui                  5 minutes ago       Up 5 minutes        0.0.0.0:80->9292/tcp, :::80->9292/tcp
+```
+
+7. Изучен сбор структурированных и неструктурированных логов сервисов `post` и `ui`;
+
+Видим, что `elasticsearch` и `kibana` поднялись и отвечают на запросы. Создадим несколько постов и проверим, что видно в kibana.
+
+Для разбора строки на поля, для этого берем фильры `fluentd`.
+```
+{"addr": "10.0.1.3", "event": "request", "level": "info", "method": "GET", "path": "/healthcheck?", "request_id": null, "response_status": 200, "service": "post", "timestamp": "2024-03-02 12:17:41"}
+```
+
+```
+<filter service.post>
+  @type parser
+  format json
+  key_name log
+</filter>
+```
+
+Для разбора неструктурированных логов сервиса `ui` добавим к контейнеру драйвер для логирования:
+
+```
+--- a/docker/docker-compose.yml
++++ b/docker/docker-compose.yml
+services:
+       - ${UI_PORT}:9292/tcp
+     networks:
+       - front_net
+    logging:
+      driver: "fluentd"
+      options:
+        fluentd-address: localhost:24224
+        tag: service.ui
+
+   post:
+     image: ${USERNAME}/post:logging
+```
+логи сервиса ui
+
+```
+{"addr": "10.0.1.3", "event": "request", "level": "info", "method": "GET", "path": "/healthcheck?", "request_id": null, "response_status": 200, "service": "post", "timestamp": "2024-03-02 12:30:17"}
+```
+Разбираем при помощи регулярного выражения. Редактируем файл `fluent.conf`.
+
+```
+<filter service.ui>
+  @type parser
+  format /\[(?<time>[^\]]*)\]  (?<level>\S+) (?<user>\S+)[\W]*service=(?<service>\S+)[\W]*event=(?<event>\S+)[\W]*(?:path=(?<path>\S+)[\W]*)?request_id=(?<request_id>\S+)[\W]*(?:remote_addr=(?<remote_addr>\S+)[\W]*)?(?:method= (?<method>\S+)[\W]*)?(?:response_status=(?<response_status>\S+)[\W]*)?(?:message='(?<message>[^\']*)[\W]*)?/
+  key_name log
+</filter>
+```
+Чтобы уйти от огорода регулярок в этом случае можно использовать `grok` шаблоны.
+
+```
+<filter service.ui>
+  @type parser
+  <parse>
+    @type grok
+    <grok>
+      pattern %{RUBY_LOGGER}
+    </grok>
+  </parse>
+  key_name log
+</filter>
+```
+
+8. Разобраны остальные неструктурированные логи;
+
+Используем два последовательных фильтра для разбора на составные части сообщений сервиса `ui`.
+
+```
+<filter service.ui>
+  @type parser
+  <parse>
+    @type grok
+    <grok>
+      pattern service=%{WORD:service} \| event=%{WORD:event} \| request_id=%{GREEDYDATA:request_id} \| message='%{GREEDYDATA:message}'
+    </grok>
+  </parse>
+  key_name message
+  reserve_data true
+</filter>
+
+<filter service.ui>
+  @type parser
+  <parse>
+    @type grok
+    <grok>
+      pattern service=%{WORD:service} \| event=%{WORD:event} \| path=%{GREEDYDATA:path} \| request_id=%{GREEDYDATA:request_id} \| remote_addr=%{IPV4:remote_addr} \| method= %{WORD:method} \| response_status=%{INT:response_status}
+    </grok>
+  </parse>
+  key_name message
+</filter>
+```
+Для упращения жизни логично использовать онлайн дебаггеров grok. [Один из них.](https://www.heroku.com/home)
+
+9. Настроен распределенный трейсинг;
+
+В compose-файл для сервисов логирования добавлен сервис распределенного трейсинга `Zipkin`
+
+```
+--- a/docker/docker-compose-logging.yml
++++ b/docker/docker-compose-logging.yml
+services:
+     image: kibana:7.4.0
+     ports:
+       - "5601:5601"
+
+  zipkin:
+    image: openzipkin/zipkin:2.21.0
+    ports:
+      - "9411:9411"
+```
+Сервисы настроены на использование Zipkin
+
+```
+--- a/docker/docker-compose.yml
++++ b/docker/docker-compose.yml
+services:
+       options:
+         fluentd-address: localhost:24224
+         tag: service.ui
+    environment:
+      - ZIPKIN_ENABLED=${ZIPKIN_ENABLED}
+
+   post:
+     image: ${USERNAME}/post:logging
+services:
+       options:
+         fluentd-address: localhost:24224
+         tag: service.post
+    environment:
+      - ZIPKIN_ENABLED=${ZIPKIN_ENABLED}
+
+   comment:
+     image: ${USERNAME}/comment:logging
+     networks:
+       - back_net
+       - front_net
+    environment:
+      - ZIPKIN_ENABLED=${ZIPKIN_ENABLED}
+
+ volumes:
+   post_db:
+
+...
+
+image: openzipkin/zipkin:2.21.0
+     ports:
+       - "9411:9411"
+    networks:
+      - front_net
+      - back_net
+
+networks:
+  front_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.0.1.0/24
+
+  back_net:
+    driver: bridge
+    ipam:
+     config:
+        - subnet: 10.0.2.0/24
+```
+Изучен функционал трейсов через web-интерфейс Zipkin.
+
+## Дополнительное задание.
+
+10. Произведен траблшутинг UI-экспириенса.
+Загружен репозиторий со сломанным кодом приложения в каталог src-bugged и запущен.
+
+В `zipkin` видим, что функция `db_find_single_post` сервиса `post` отрабатывает 3 секунды. Находим в исходнике, исправляем.
+
+```
+./bugged-code/post-py/post_app.py
+
+def find_post(id):
+         stop_time = time.time()  # + 0.3
+         resp_time = stop_time - start_time
+         app.post_read_db_seconds.observe(resp_time)
+         time.sleep(3) <--------------------------------------- Баг тут!
+         log_event('info', 'post_find',
+                   'Successfully found the post information',
+                   {'post_id': id})
+```
+
 # HW20 CI/CD в Kubernetes.
 
 ## В процессе выполнения ДЗ выполнены следующие мероприятия:

@@ -1,16 +1,16 @@
-FROM alpine:3.14
+FROM alpine:3.4
+RUN apk update && apk add ruby-bundler ruby-json ruby-dev build-base
 
-WORKDIR /app
-COPY Gemfile* ./
+ENV APP_HOME /app
 
-RUN set -x \
- && apk --no-cache --update add ruby-full ruby-dev build-base \
- && gem install bundler:1.17.2 --no-document \
- && bundle install \
- && apk del ruby-dev build-base
+WORKDIR $APP_HOME
+ADD Gemfile* $APP_HOME/
+RUN bundle install
+ADD . $APP_HOME
 
-COPY . ./
-ENV POST_SERVICE_HOST=post POST_SERVICE_PORT=5000 COMMENT_SERVICE_HOST=comment COMMENT_SERVICE_PORT=9292
-EXPOSE 9292/tcp
+ENV POST_SERVICE_HOST post
+ENV POST_SERVICE_PORT 5000
+ENV COMMENT_SERVICE_HOST comment
+ENV COMMENT_SERVICE_PORT 9292
 
 CMD ["puma"]

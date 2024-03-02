@@ -1,7 +1,7 @@
 .PHONY: build push
 
 build:
-		docker build -t skyfly534/ui .
+	docker build -t r2d2k/ui .
 
 push:
-		docker push skyfly534/ui
+	docker push r2d2k/ui
